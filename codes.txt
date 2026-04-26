@@ -47,79 +47,75 @@ print("File saved as reddit.csv")
 _________________________________________________________________________________________________________________________________________
 
 # CODE 3: DATA CLEANING AND PREPROCESS
-# KaggleHub Dataset Loading Section
+# pip install pandas tabulate
+# Local dataset: make in notepad : social_media_posts.csv 
+# Post_ID,User_Name,Post_Text,Likes,Comments
+# 1,Adrian,"I love this new app! 😊 It's amazing.",120,15
+# 2,Rahul,"This product is good and useful.",85,10
+# 3,,"Worst experience ever!!! 😡",20,8
+# 4,Neha,"Great service, I am very happy.",150,25
+# 5,Amit,"Bad quality and poor support.",30,12
+# 6,Sara,"The update is okay, nothing special.",45,5
+# 7,,"I love this new app! 😊 It's amazing.",120,15
+# 8,John,"Excellent features and easy to use.",200,35
+# 9,Meera,"Too many bugs after the update!!!",18,6
+# 10,Karan,"Nice platform for social media analytics.",95,14
 
-import kagglehub
-import os
 import pandas as pd
 import re
 from tabulate import tabulate
 
-path = kagglehub.dataset_download(
-    "kashishparmar02/social-media-sentiments-analysis-dataset"
-)
-
-print("Dataset path:", path)
-
-csv_file = None
-
-for file in os.listdir(path):
-    if file.endswith(".csv"):
-        csv_file = os.path.join(path, file)
-        break
-
-if csv_file is None:
-    raise FileNotFoundError("No CSV file found in dataset.")
-
-df_raw = pd.read_csv(csv_file)
-
-print("Original Columns:", df_raw.columns.tolist())
-
-df_raw.columns = df_raw.columns.str.strip()
-
-df = pd.DataFrame()
-
-df["Post_ID"] = range(1, len(df_raw) + 1)
-
-text_col = None
-user_col = None
-likes_col = None
-comments_col = None
-
-for col in df_raw.columns:
-    lower_col = col.lower()
-
-    if lower_col in ["text", "post_text", "content", "tweet", "review"]:
-        text_col = col
-    elif lower_col in ["user", "user_name", "username"]:
-        user_col = col
-    elif lower_col == "likes":
-        likes_col = col
-    elif lower_col in ["comments", "comment"]:
-        comments_col = col
-
-if text_col is None:
-    raise ValueError("Text/Post column not found in dataset.")
-
-df["Post_Text"] = df_raw[text_col].astype(str)
-
-if user_col is not None:
-    df["User_Name"] = df_raw[user_col]
-else:
-    df["User_Name"] = None
-
-if likes_col is not None:
-    df["Likes"] = pd.to_numeric(df_raw[likes_col], errors="coerce").fillna(0)
-else:
-    df["Likes"] = 0
-
-if comments_col is not None:
-    df["Comments"] = pd.to_numeric(df_raw[comments_col], errors="coerce").fillna(0)
-else:
-    df["Comments"] = 0
+df = pd.read_csv("social_media_posts.csv")
 
 print("\nORIGINAL DATASET\n")
-print(tabulate(df.head(10), headers="keys", tablefmt="grid", showindex=False))
+print(tabulate(df, headers="keys", tablefmt="grid", showindex=False))
+
+steps = [
+    ("1 LOWERCASE CONVERSION", lambda x: str(x).lower()),
+    ("2 EMOJI REMOVAL", lambda x: re.sub(r"[^\x00-\x7F]+", "", x)),
+    ("3 SPECIAL CHARACTER REMOVAL", lambda x: re.sub(r"[^a-zA-Z0-9\s]", "", x)),
+    ("4 WHITESPACE NORMALIZATION", lambda x: re.sub(r"\s+", " ", x).strip())
+]
+
+for title, func in steps:
+    df["Post_Text"] = df["Post_Text"].apply(func)
+    print(f"\n{title}\n")
+    print(tabulate(df[["Post_ID", "Post_Text"]], headers="keys", tablefmt="grid", showindex=False))
+
+df["User_Name"] = df["User_Name"].fillna("anonymous_user")
+
+print("\n5 MISSING VALUE HANDLING (User_Name)\n")
+print(tabulate(df[["Post_ID", "User_Name"]], headers="keys", tablefmt="grid", showindex=False))
+
+print("\n6 DUPLICATE ROW DETECTION\n")
+
+duplicates = df[df.duplicated(subset=["Post_Text", "Likes", "Comments"], keep="first")]
+
+if not duplicates.empty:
+    print("DUPLICATE ROW(S) IDENTIFIED AND REMOVED:\n")
+    print(tabulate(duplicates, headers="keys", tablefmt="grid", showindex=False))
+else:
+    print("No duplicate rows found.")
+
+df = df.drop_duplicates(subset=["Post_Text", "Likes", "Comments"], keep="first")
+
+print("\nDATASET AFTER DUPLICATE REMOVAL\n")
+print(tabulate(df, headers="keys", tablefmt="grid", showindex=False))
+
+df["Text_Length"] = df["Post_Text"].apply(len)
+
+print("\n7 FEATURE EXTRACTION - TEXT LENGTH\n")
+print(tabulate(df[["Post_ID", "Post_Text", "Text_Length"]], headers="keys", tablefmt="grid", showindex=False))
+
+df["Engagement_Score"] = df["Likes"] + df["Comments"]
+
+print("\n8 FEATURE EXTRACTION - ENGAGEMENT SCORE\n")
+print(tabulate(df[["Post_ID", "Likes", "Comments", "Engagement_Score"]], headers="keys", tablefmt="grid", showindex=False))
+
+df.to_csv("cleaned_social_media_data.csv", index=False)
+
+print("\nDATA PREPROCESSING COMPLETED SUCCESSFULLY")
+print("Cleaned file saved as: cleaned_social_media_data.csv")
 _________________________________________________________________________________________________________________________________________
   
 # CODE 4: EDA AND VISUALIZATION
