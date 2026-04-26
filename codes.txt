@@ -1,126 +1,25 @@
 # CODE 2: PARSEHUB
-# YouTube Data Scraping using Selenium
-
-import time
+2. To scrap data from social media websites.
+import requests
+from bs4 import BeautifulSoup
 import pandas as pd
 
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from webdriver_manager.chrome import ChromeDriverManager
+url = "https://old.reddit.com/r/Python/” 
+res = requests.get(url)
+soup = BeautifulSoup(res.text, "html.parser")
 
+titles = []
+posts = soup.find_all("a", class_="title")
 
-# Function to scrape YouTube data from a direct URL
-def scrape_youtube(url, num_scrolls=5):
-    print("Initializing Browser...")
+for post in posts:
+    titles.append(post.text)
 
-    options = webdriver.ChromeOptions()
+df = pd.DataFrame(titles, columns=["Post Title"])
+print(df)
 
-    # Keep browser visible
-    # To run in background, uncomment the next line:
-    # options.add_argument("--headless")
+df.to_csv("reddit.csv", index=False)
 
-    options.add_argument("--start-maximized")
-
-    driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()),
-        options=options
-    )
-
-    print(f"Opening: {url}")
-    driver.get(url)
-    time.sleep(5)
-
-    print(f"Scrolling {num_scrolls} times...")
-
-    body = driver.find_element(By.TAG_NAME, "body")
-
-    for _ in range(num_scrolls):
-        body.send_keys(Keys.PAGE_DOWN)
-        time.sleep(2)
-
-    print("Extracting Data...")
-
-    videos = []
-
-    video_elements = driver.find_elements(
-        By.XPATH,
-        '//ytd-video-renderer | //ytd-grid-video-renderer | //ytd-rich-item-renderer'
-    )
-
-    for video in video_elements:
-        try:
-            # Extract title and video link
-            title_el = video.find_element(
-                By.XPATH,
-                './/a[@id="video-title-link"] | .//a[@id="video-title"]'
-            )
-
-            title = title_el.text.strip()
-            link = title_el.get_attribute("href")
-
-            # Extract views
-            try:
-                views = video.find_element(
-                    By.XPATH,
-                    './/span[contains(text(), "views")]'
-                ).text
-            except Exception:
-                views = "N/A"
-
-            # Extract channel name
-            try:
-                channel = video.find_element(
-                    By.XPATH,
-                    './/div[@id="channel-info"]//yt-formatted-string/a | .//yt-formatted-string[contains(@class, "ytd-channel-name")]//a'
-                ).text
-            except Exception:
-                channel = "Unknown/Current Channel"
-
-            if title and link:
-                videos.append({
-                    "Title": title,
-                    "Channel": channel,
-                    "Views": views,
-                    "Link": link
-                })
-
-        except Exception:
-            continue
-
-    driver.quit()
-
-    return videos
-
-
-# ==============================
-# EXECUTION STARTS HERE
-# ==============================
-
-if __name__ == "__main__":
-
-    print("Paste the YouTube URL you want to scrape")
-    print("Example: search result page or channel videos page")
-
-    target_url = input("> ")
-
-    if target_url:
-        scraped_data = scrape_youtube(target_url)
-
-        df = pd.DataFrame(scraped_data)
-
-        print("\n--- Scraped Data Preview ---")
-        print(df.head())
-
-        filename = "youtube_data.csv"
-        df.to_csv(filename, index=False)
-
-        print(f"\nSuccess! Data saved to '{filename}'")
-
-    else:
-        print("No URL provided. Exiting.")
-
+https://quotes.toscrape.com/  - for parsehub
 _________________________________________________________________________________________________________________________________________
 
 # CODE 3: DATA CLEANING AND PREPROCESS
