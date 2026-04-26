@@ -1,0 +1,1208 @@
+# CODE 2: PARSEHUB
+# YouTube Data Scraping using Selenium
+
+import time
+import pandas as pd
+
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from webdriver_manager.chrome import ChromeDriverManager
+
+
+# Function to scrape YouTube data from a direct URL
+def scrape_youtube(url, num_scrolls=5):
+    print("Initializing Browser...")
+
+    options = webdriver.ChromeOptions()
+
+    # Keep browser visible
+    # To run in background, uncomment the next line:
+    # options.add_argument("--headless")
+
+    options.add_argument("--start-maximized")
+
+    driver = webdriver.Chrome(
+        service=Service(ChromeDriverManager().install()),
+        options=options
+    )
+
+    print(f"Opening: {url}")
+    driver.get(url)
+    time.sleep(5)
+
+    print(f"Scrolling {num_scrolls} times...")
+
+    body = driver.find_element(By.TAG_NAME, "body")
+
+    for _ in range(num_scrolls):
+        body.send_keys(Keys.PAGE_DOWN)
+        time.sleep(2)
+
+    print("Extracting Data...")
+
+    videos = []
+
+    video_elements = driver.find_elements(
+        By.XPATH,
+        '//ytd-video-renderer | //ytd-grid-video-renderer | //ytd-rich-item-renderer'
+    )
+
+    for video in video_elements:
+        try:
+            # Extract title and video link
+            title_el = video.find_element(
+                By.XPATH,
+                './/a[@id="video-title-link"] | .//a[@id="video-title"]'
+            )
+
+            title = title_el.text.strip()
+            link = title_el.get_attribute("href")
+
+            # Extract views
+            try:
+                views = video.find_element(
+                    By.XPATH,
+                    './/span[contains(text(), "views")]'
+                ).text
+            except Exception:
+                views = "N/A"
+
+            # Extract channel name
+            try:
+                channel = video.find_element(
+                    By.XPATH,
+                    './/div[@id="channel-info"]//yt-formatted-string/a | .//yt-formatted-string[contains(@class, "ytd-channel-name")]//a'
+                ).text
+            except Exception:
+                channel = "Unknown/Current Channel"
+
+            if title and link:
+                videos.append({
+                    "Title": title,
+                    "Channel": channel,
+                    "Views": views,
+                    "Link": link
+                })
+
+        except Exception:
+            continue
+
+    driver.quit()
+
+    return videos
+
+
+# ==============================
+# EXECUTION STARTS HERE
+# ==============================
+
+if __name__ == "__main__":
+
+    print("Paste the YouTube URL you want to scrape")
+    print("Example: search result page or channel videos page")
+
+    target_url = input("> ")
+
+    if target_url:
+        scraped_data = scrape_youtube(target_url)
+
+        df = pd.DataFrame(scraped_data)
+
+        print("\n--- Scraped Data Preview ---")
+        print(df.head())
+
+        filename = "youtube_data.csv"
+        df.to_csv(filename, index=False)
+
+        print(f"\nSuccess! Data saved to '{filename}'")
+
+    else:
+        print("No URL provided. Exiting.")
+
+_________________________________________________________________________________________________________________________________________
+
+# CODE 3: DATA CLEANING AND PREPROCESS
+
+import pandas as pd
+import re
+from tabulate import tabulate
+
+# Load dataset
+df = pd.read_csv("social_media_posts.csv")
+
+print("\nORIGINAL DATASET\n")
+print(tabulate(df, headers="keys", tablefmt="grid", showindex=False))
+
+# 1. Lowercase conversion
+df["Post_Text"] = df["Post_Text"].str.lower()
+
+print("\n1. LOWERCASE CONVERSION\n")
+print(tabulate(df[["Post_ID", "Post_Text"]], headers="keys", tablefmt="grid", showindex=False))
+
+# 2. Emoji removal
+df["Post_Text"] = df["Post_Text"].apply(
+    lambda x: re.sub(r'[^\x00-\x7F]+', '', str(x))
+)
+
+print("\n2. EMOJI REMOVAL\n")
+print(tabulate(df[["Post_ID", "Post_Text"]], headers="keys", tablefmt="grid", showindex=False))
+
+# 3. Special character removal
+df["Post_Text"] = df["Post_Text"].apply(
+    lambda x: re.sub(r'[^a-zA-Z0-9\s]', '', x)
+)
+
+print("\n3. SPECIAL CHARACTER REMOVAL\n")
+print(tabulate(df[["Post_ID", "Post_Text"]], headers="keys", tablefmt="grid", showindex=False))
+
+# 4. Whitespace normalization
+df["Post_Text"] = df["Post_Text"].apply(
+    lambda x: re.sub(r'\s+', ' ', x).strip()
+)
+
+print("\n4. WHITESPACE NORMALIZATION\n")
+print(tabulate(df[["Post_ID", "Post_Text"]], headers="keys", tablefmt="grid", showindex=False))
+
+# 5. Missing value handling
+df["User_Name"] = df["User_Name"].fillna("anonymous_user")
+
+print("\n5. MISSING VALUE HANDLING (User_Name)\n")
+print(tabulate(df[["Post_ID", "User_Name"]], headers="keys", tablefmt="grid", showindex=False))
+
+# 6. Duplicate row detection
+print("\n6. DUPLICATE ROW DETECTION\n")
+
+duplicates = df[df.duplicated(subset=["Post_Text", "Likes", "Comments"], keep="first")]
+
+if not duplicates.empty:
+    print("DUPLICATE ROW(S) IDENTIFIED AND REMOVED:\n")
+    print(tabulate(duplicates, headers="keys", tablefmt="grid", showindex=False))
+else:
+    print("No duplicate rows found.")
+
+# Remove duplicates
+df = df.drop_duplicates(subset=["Post_Text", "Likes", "Comments"], keep="first")
+
+print("\nDATASET AFTER DUPLICATE REMOVAL\n")
+print(tabulate(df, headers="keys", tablefmt="grid", showindex=False))
+
+# 7. Feature extraction - Text length
+df["Text_Length"] = df["Post_Text"].apply(len)
+
+print("\n7. FEATURE EXTRACTION - TEXT LENGTH\n")
+print(tabulate(df[["Post_ID", "Post_Text", "Text_Length"]],
+               headers="keys", tablefmt="grid", showindex=False))
+
+# 8. Feature extraction - Engagement score
+df["Engagement_Score"] = df["Likes"] + df["Comments"]
+
+print("\n8. FEATURE EXTRACTION - ENGAGEMENT SCORE\n")
+print(tabulate(df[["Post_ID", "Likes", "Comments", "Engagement_Score"]],
+               headers="keys", tablefmt="grid", showindex=False))
+
+# Save cleaned dataset
+output_file = "cleaned_social_media_data.csv"
+df.to_csv(output_file, index=False)
+
+print("\nDATA PREPROCESSING COMPLETED SUCCESSFULLY")
+print("Cleaned file saved as:", output_file)
+
+
+_________________________________________________________________________________________________________________________________________
+  
+
+# CODE 4: EDA AND VISUALIZATION
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Load dataset
+file_path = "social_media_posts.csv"   # Change filename if needed
+df = pd.read_csv(file_path)
+
+print("Dataset Loaded Successfully\n")
+
+# Clean sentiment column
+df["Sentiment"] = df["Sentiment"].astype(str).str.lower().str.strip()
+
+# Function to map detailed sentiments into main categories
+def map_sentiment(x):
+    if any(word in x for word in ["positive", "joy", "happy", "love", "excited", "good", "great"]):
+        return "Positive"
+    elif any(word in x for word in ["negative", "sad", "anger", "fear", "hate", "bad", "depress", "lonely"]):
+        return "Negative"
+    else:
+        return "Neutral"
+
+df["MainSentiment"] = df["Sentiment"].apply(map_sentiment)
+
+# EXPLORATORY DATA ANALYSIS (EDA)
+
+print("Shape of Dataset:", df.shape, "\n")
+
+print("Head:\n", df.head(), "\n")
+print("Tail:\n", df.tail(), "\n")
+
+print("Info:")
+df.info()
+print("\n")
+
+print("Describe:\n", df.describe(include="all"), "\n")
+
+print("Mean:\n", df[["Likes", "Retweets"]].mean(), "\n")
+print("Median:\n", df[["Likes", "Retweets"]].median(), "\n")
+print("Mode:\n", df[["Likes", "Retweets"]].mode(), "\n")
+print("Variance:\n", df[["Likes", "Retweets"]].var(), "\n")
+print("Standard Deviation:\n", df[["Likes", "Retweets"]].std(), "\n")
+
+print("Correlation:\n", df[["Likes", "Retweets"]].corr(), "\n")
+
+# DATA VISUALIZATION
+
+# 1. Scatter Plot
+plt.figure(figsize=(6, 4))
+plt.scatter(df["Likes"], df["Retweets"], alpha=0.6)
+plt.title("Scatter Plot: Likes vs Retweets")
+plt.xlabel("Likes")
+plt.ylabel("Retweets")
+plt.tight_layout()
+plt.show()
+
+# 2. Line Plot
+likes_trend = df["Likes"].head(50)
+
+plt.figure(figsize=(6, 4))
+plt.plot(likes_trend)
+plt.title("Line Plot of Likes (First 50 Records)")
+plt.xlabel("Index")
+plt.ylabel("Likes")
+plt.tight_layout()
+plt.show()
+
+# 3. Bar Chart
+plt.figure(figsize=(6, 4))
+sns.countplot(x="MainSentiment", data=df)
+plt.title("Bar Chart of Sentiments")
+plt.tight_layout()
+plt.show()
+
+# 4. Histogram
+plt.figure(figsize=(6, 4))
+plt.hist(df["Likes"].dropna(), bins=30)
+plt.title("Histogram of Likes")
+plt.xlabel("Likes")
+plt.ylabel("Frequency")
+plt.tight_layout()
+plt.show()
+
+# 5. Pie Chart
+sent_counts = df["MainSentiment"].value_counts()
+
+plt.figure(figsize=(6, 6))
+plt.pie(
+    sent_counts,
+    labels=sent_counts.index,
+    autopct="%1.1f%%",
+    startangle=90
+)
+plt.title("Sentiment Distribution - Pie Chart")
+plt.tight_layout()
+plt.show()
+
+# 6. Box Plot
+filtered_df = df[df["Likes"] < df["Likes"].quantile(0.95)]
+
+plt.figure(figsize=(6, 4))
+sns.boxplot(x="MainSentiment", y="Likes", data=filtered_df)
+plt.title("Box Plot of Likes by Sentiment")
+plt.tight_layout()
+plt.show()
+
+# 7. Heatmap
+plt.figure(figsize=(6, 4))
+sns.heatmap(df[["Likes", "Retweets"]].corr(), annot=True)
+plt.title("Heatmap of Correlation")
+plt.tight_layout()
+plt.show()
+
+# 8. Count Plot
+plt.figure(figsize=(6, 4))
+sns.countplot(x="MainSentiment", data=df)
+plt.title("Count Plot of Sentiment")
+plt.tight_layout()
+plt.show()
+
+# 9. Area Plot
+engagement = df.groupby("MainSentiment")[["Likes", "Retweets"]].mean()
+
+plt.figure(figsize=(6, 4))
+engagement.plot.area(alpha=0.7)
+plt.title("Area Plot of Average Engagement")
+plt.xlabel("Sentiment")
+plt.ylabel("Average Count")
+plt.tight_layout()
+plt.show()
+
+# 10. Pair Plot
+sns.pairplot(df[["Likes", "Retweets"]])
+plt.show()
+
+_________________________________________________________________________________________________________________________________________
+
+# CODE 5: CONTENT BASED SENTIMENT ANALYSIS
+# Twitter Entity Sentiment Analysis using TF-IDF and Logistic Regression
+# pip install kagglehub pandas matplotlib scikit-learn
+
+import kagglehub
+import os
+import pandas as pd
+import matplotlib.pyplot as plt
+
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, confusion_matrix, ConfusionMatrixDisplay, classification_report
+
+# ==============================
+# 1. DOWNLOAD AND LOAD DATASET
+# ==============================
+
+path = kagglehub.dataset_download("jp797498e/twitter-entity-sentiment-analysis")
+
+print("Dataset path:", path)
+
+train_df = None
+val_df = None
+
+for file in os.listdir(path):
+    if "twitter_training" in file:
+        train_df = pd.read_csv(os.path.join(path, file), header=None)
+
+    if "twitter_validation" in file:
+        val_df = pd.read_csv(os.path.join(path, file), header=None)
+
+# Check if files are loaded
+if train_df is None or val_df is None:
+    raise FileNotFoundError("Training or validation file not found in downloaded dataset.")
+
+# ==============================
+# 2. PREPROCESSING
+# ==============================
+
+columns = ["tweet_id", "entity", "sentiment", "text"]
+
+train_df.columns = columns
+val_df.columns = columns
+
+df = pd.concat([train_df, val_df], ignore_index=True)
+
+# Remove missing text values
+df = df.dropna(subset=["text"])
+
+# Convert text to string
+df["text"] = df["text"].astype(str)
+
+print("\nDataset Shape:", df.shape)
+
+print("\nSentiment Distribution:")
+print(df["sentiment"].value_counts())
+
+# ==============================
+# 3. FEATURE EXTRACTION
+# ==============================
+
+vectorizer = TfidfVectorizer(
+    max_features=7000,
+    ngram_range=(1, 2),
+    stop_words="english"
+)
+
+X = vectorizer.fit_transform(df["text"])
+y = df["sentiment"]
+
+# ==============================
+# 4. TRAIN-TEST SPLIT
+# ==============================
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X,
+    y,
+    test_size=0.2,
+    random_state=42,
+    stratify=y
+)
+
+# ==============================
+# 5. MODEL TRAINING
+# ==============================
+
+model = LogisticRegression(max_iter=1000)
+model.fit(X_train, y_train)
+
+# ==============================
+# 6. MODEL EVALUATION
+# ==============================
+
+y_pred = model.predict(X_test)
+
+accuracy = accuracy_score(y_test, y_pred)
+
+print("\nModel Accuracy:", round(accuracy, 3))
+
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred))
+
+# ==============================
+# 7. SAMPLE PREDICTIONS
+# ==============================
+
+sample_10 = df[["text", "sentiment"]].head(10).copy()
+
+sample_10["predicted"] = model.predict(
+    vectorizer.transform(sample_10["text"])
+)
+
+print("\nPredictions for First 10 Rows:")
+print(sample_10)
+
+# ==============================
+# 8. SENTIMENT DISTRIBUTION VISUALIZATION
+# ==============================
+
+plt.figure(figsize=(8, 5))
+
+df["sentiment"].value_counts().plot(
+    kind="bar",
+    edgecolor="white"
+)
+
+plt.title("Twitter Entity Sentiment Distribution")
+plt.xlabel("Sentiment")
+plt.ylabel("Count")
+plt.xticks(rotation=0)
+plt.tight_layout()
+plt.show()
+
+# ==============================
+# 9. CONFUSION MATRIX VISUALIZATION
+# ==============================
+
+cm = confusion_matrix(y_test, y_pred, labels=model.classes_)
+
+disp = ConfusionMatrixDisplay(
+    confusion_matrix=cm,
+    display_labels=model.classes_
+)
+
+disp.plot(cmap="Blues", xticks_rotation=45)
+plt.title("Confusion Matrix - Sentiment Classification")
+plt.tight_layout()
+plt.show()
+
+print("\nCONTENT BASED SENTIMENT ANALYSIS COMPLETED SUCCESSFULLY")
+
+_________________________________________________________________________________________________________________________________________
+
+# CODE 6: SMA NETWORK
+# Structure-Based Social Media Analytics using NetworkX
+# VS Code Version
+
+import pandas as pd
+import networkx as nx
+import matplotlib.pyplot as plt
+
+# ==============================
+# 1. LOAD DATASET
+# ==============================
+
+# Keep your CSV file in the same folder as this Python file
+file_path = "edges.csv"
+
+df = pd.read_csv(file_path)
+
+print("\nDATASET LOADED SUCCESSFULLY\n")
+print("Columns in Dataset:", df.columns.tolist())
+print("Dataset Shape:", df.shape)
+print("\nFirst 5 Rows:")
+print(df.head())
+
+# Rename columns if needed
+# Your CSV should have two columns: Source and Target
+df.columns = ["Source", "Target"]
+
+# ==============================
+# 2. CREATE DIRECTED NETWORK GRAPH
+# ==============================
+
+G = nx.from_pandas_edgelist(
+    df,
+    source="Source",
+    target="Target",
+    create_using=nx.DiGraph()
+)
+
+print("\nNETWORK GRAPH CREATED SUCCESSFULLY\n")
+print("Number of Nodes:", G.number_of_nodes())
+print("Number of Edges:", G.number_of_edges())
+
+# ==============================
+# 3. BASIC NETWORK VISUALIZATION
+# ==============================
+
+plt.figure(figsize=(12, 8))
+
+pos = nx.spring_layout(G, seed=42)
+
+nx.draw(
+    G,
+    pos,
+    with_labels=True,
+    node_size=500,
+    font_size=8,
+    arrows=True
+)
+
+plt.title("Social Media Network Graph")
+plt.tight_layout()
+plt.show()
+
+# ==============================
+# 4. DEGREE ANALYSIS
+# ==============================
+
+degree = dict(G.degree())
+in_degree = dict(G.in_degree())
+out_degree = dict(G.out_degree())
+
+print("\nDEGREE OF EACH NODE:")
+print(degree)
+
+print("\nIN-DEGREE OF EACH NODE:")
+print(in_degree)
+
+print("\nOUT-DEGREE OF EACH NODE:")
+print(out_degree)
+
+# ==============================
+# 5. CENTRALITY MEASURES
+# ==============================
+
+degree_centrality = nx.degree_centrality(G)
+betweenness_centrality = nx.betweenness_centrality(G)
+closeness_centrality = nx.closeness_centrality(G)
+
+# Eigenvector centrality works better on undirected graph
+eigenvector_centrality = nx.eigenvector_centrality(
+    G.to_undirected(),
+    max_iter=1000
+)
+
+print("\nDEGREE CENTRALITY:")
+print(degree_centrality)
+
+print("\nBETWEENNESS CENTRALITY:")
+print(betweenness_centrality)
+
+print("\nCLOSENESS CENTRALITY:")
+print(closeness_centrality)
+
+print("\nEIGENVECTOR CENTRALITY:")
+print(eigenvector_centrality)
+
+# ==============================
+# 6. NETWORK FEATURES
+# ==============================
+
+density = nx.density(G)
+clustering_coefficient = nx.average_clustering(G.to_undirected())
+
+print("\nNETWORK DENSITY:", density)
+print("AVERAGE CLUSTERING COEFFICIENT:", clustering_coefficient)
+
+# Bridges are checked on undirected graph
+bridges = list(nx.bridges(G.to_undirected()))
+
+print("\nBRIDGES IN NETWORK:")
+print(bridges)
+
+# ==============================
+# 7. TOP 5 INFLUENTIAL USERS
+# ==============================
+
+top_5_users = sorted(
+    degree_centrality.items(),
+    key=lambda x: x[1],
+    reverse=True
+)[:5]
+
+print("\nTOP 5 INFLUENTIAL USERS BASED ON DEGREE CENTRALITY:")
+for user, score in top_5_users:
+    print(user, ":", score)
+
+# ==============================
+# 8. HIGHLIGHT TOP 5 INFLUENTIAL USERS
+# ==============================
+
+top_nodes = [node for node, centrality in top_5_users]
+
+node_colors = []
+
+for node in G.nodes():
+    if node in top_nodes:
+        node_colors.append("red")
+    else:
+        node_colors.append("skyblue")
+
+plt.figure(figsize=(12, 8))
+
+nx.draw(
+    G,
+    pos,
+    with_labels=True,
+    node_color=node_colors,
+    node_size=600,
+    font_size=8,
+    arrows=True
+)
+
+plt.title("Top 5 Influential Users Highlighted")
+plt.tight_layout()
+plt.show()
+
+# ==============================
+# 9. COMMUNITY DETECTION
+# ==============================
+
+communities = nx.community.greedy_modularity_communities(G.to_undirected())
+
+print("\nCOMMUNITIES DETECTED:")
+for i, community in enumerate(communities, start=1):
+    print("Community", i, ":", list(community))
+
+# ==============================
+# 10. COMMUNITY VISUALIZATION
+# ==============================
+
+community_map = {}
+
+for i, community in enumerate(communities):
+    for node in community:
+        community_map[node] = i
+
+community_colors = [community_map[node] for node in G.nodes()]
+
+plt.figure(figsize=(12, 8))
+
+nx.draw(
+    G,
+    pos,
+    with_labels=True,
+    node_color=community_colors,
+    cmap=plt.cm.Set3,
+    node_size=600,
+    font_size=8,
+    arrows=True
+)
+
+plt.title("Community Detection in Social Media Network")
+plt.tight_layout()
+plt.show()
+
+# ==============================
+# 11. SAVE ANALYSIS RESULTS
+# ==============================
+
+results = pd.DataFrame({
+    "Node": list(G.nodes()),
+    "Degree": [degree[node] for node in G.nodes()],
+    "In_Degree": [in_degree[node] for node in G.nodes()],
+    "Out_Degree": [out_degree[node] for node in G.nodes()],
+    "Degree_Centrality": [degree_centrality[node] for node in G.nodes()],
+    "Betweenness_Centrality": [betweenness_centrality[node] for node in G.nodes()],
+    "Closeness_Centrality": [closeness_centrality[node] for node in G.nodes()],
+    "Eigenvector_Centrality": [eigenvector_centrality[node] for node in G.nodes()]
+})
+
+results.to_csv("network_analysis_results.csv", index=False)
+
+print("\nNETWORK ANALYSIS COMPLETED SUCCESSFULLY")
+print("Results saved as: network_analysis_results.csv")
+
+
+_________________________________________________________________________________________________________________________________________
+
+
+# CODE 10: TEXT REVIEW MINING
+# Spotify Review Mining using KaggleHub Dataset
+
+# Install:
+# pip install kagglehub pandas numpy matplotlib seaborn nltk vaderSentiment wordcloud scikit-learn
+
+import kagglehub
+import os
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import re
+import warnings
+import nltk
+
+from collections import Counter
+from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer
+from nltk.tokenize import word_tokenize
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+from wordcloud import WordCloud
+
+warnings.filterwarnings("ignore")
+
+# ==============================
+# 1. DOWNLOAD NLTK RESOURCES
+# ==============================
+
+nltk.download("punkt")
+nltk.download("stopwords")
+nltk.download("wordnet")
+
+print("All libraries imported successfully.")
+
+# ==============================
+# 2. DOWNLOAD DATASET USING KAGGLEHUB
+# ==============================
+
+print("\nDownloading Spotify Reviews Dataset from KaggleHub...\n")
+
+path = kagglehub.dataset_download(
+    "ashishkumarak/spotify-reviews-playstore-daily-update"
+)
+
+print("Dataset downloaded successfully.")
+print("Dataset path:", path)
+
+# ==============================
+# 3. FIND AND LOAD CSV FILE
+# ==============================
+
+csv_file = None
+
+for file in os.listdir(path):
+    if file.endswith(".csv"):
+        csv_file = os.path.join(path, file)
+        break
+
+if csv_file is None:
+    raise FileNotFoundError("No CSV file found in the downloaded Kaggle dataset.")
+
+print("\nCSV file found:", csv_file)
+
+df_raw = pd.read_csv(csv_file)
+
+print("\nDataset Loaded Successfully")
+print("Original Columns:", df_raw.columns.tolist())
+print("Original Shape:", df_raw.shape)
+
+# ==============================
+# 4. STANDARDIZE COLUMN NAMES
+# ==============================
+
+# Convert all column names to lowercase for easier matching
+df_raw.columns = df_raw.columns.str.lower().str.strip()
+
+print("\nCleaned Columns:", df_raw.columns.tolist())
+
+# Try to detect important columns automatically
+review_col = None
+rating_col = None
+likes_col = None
+date_col = None
+user_col = None
+
+for col in df_raw.columns:
+    if col in ["content", "review", "reviews", "text", "comment"]:
+        review_col = col
+    elif col in ["score", "rating", "ratings", "stars"]:
+        rating_col = col
+    elif col in ["thumbsupcount", "thumbs_up", "likes", "thumbs up", "thumbs_up_count"]:
+        likes_col = col
+    elif col in ["at", "date", "reviewcreatedversion", "time"]:
+        date_col = col
+    elif col in ["username", "user_name", "user", "name"]:
+        user_col = col
+
+if review_col is None:
+    raise ValueError("Review column not found. Please check the dataset column names.")
+
+if rating_col is None:
+    raise ValueError("Rating column not found. Please check the dataset column names.")
+
+# Create final dataframe
+df = pd.DataFrame()
+
+df["review"] = df_raw[review_col]
+df["rating"] = df_raw[rating_col]
+
+if likes_col is not None:
+    df["likes"] = df_raw[likes_col]
+else:
+    df["likes"] = 0
+
+if date_col is not None:
+    df["date"] = pd.to_datetime(df_raw[date_col], errors="coerce")
+else:
+    df["date"] = pd.NaT
+
+if user_col is not None:
+    df["userName"] = df_raw[user_col]
+else:
+    df["userName"] = "anonymous_user"
+
+# Clean missing values
+df.dropna(subset=["review"], inplace=True)
+df["review"] = df["review"].astype(str)
+df["rating"] = pd.to_numeric(df["rating"], errors="coerce")
+df["likes"] = pd.to_numeric(df["likes"], errors="coerce").fillna(0)
+
+df.dropna(subset=["rating"], inplace=True)
+df.reset_index(drop=True, inplace=True)
+
+print("\nFinal Dataset Shape:", df.shape)
+
+if df["date"].notna().any():
+    print("Date Range:", df["date"].min().date(), "to", df["date"].max().date())
+
+print("\nRating Distribution:")
+print(df["rating"].value_counts().sort_index())
+
+df.to_csv("spotify_reviews_raw.csv", index=False)
+
+# ==============================
+# 5. STAR RATING DISTRIBUTION
+# ==============================
+
+rating_counts = df["rating"].value_counts().sort_index()
+
+plt.figure(figsize=(7, 5))
+plt.bar(rating_counts.index, rating_counts.values, edgecolor="white")
+plt.title("Rating Distribution")
+plt.xlabel("Star Rating")
+plt.ylabel("Number of Reviews")
+
+for x, y in zip(rating_counts.index, rating_counts.values):
+    plt.text(x, y + 5, str(y), ha="center", fontsize=10)
+
+plt.tight_layout()
+plt.savefig("rating_distribution_bar.png", dpi=150, bbox_inches="tight")
+plt.show()
+
+plt.figure(figsize=(6, 6))
+plt.pie(
+    rating_counts.values,
+    labels=[f"{int(r)}★" for r in rating_counts.index],
+    autopct="%1.1f%%",
+    startangle=140,
+    wedgeprops={"edgecolor": "white", "linewidth": 1.5}
+)
+plt.title("Rating Share")
+plt.tight_layout()
+plt.savefig("rating_distribution_pie.png", dpi=150, bbox_inches="tight")
+plt.show()
+
+print(f"\nAverage Rating: {df['rating'].mean():.2f}")
+print(
+    f"1-2 Star Reviews: {len(df[df['rating'] <= 2])} "
+    f"({len(df[df['rating'] <= 2]) / len(df) * 100:.1f}%)"
+)
+
+# ==============================
+# 6. TEXT PREPROCESSING
+# ==============================
+
+lemmatizer = WordNetLemmatizer()
+stop_words = set(stopwords.words("english"))
+
+custom_stops = {
+    "app", "spotify", "music", "song", "songs", "use", "using", "used",
+    "also", "get", "got", "would", "one", "good", "great", "like",
+    "really", "even", "still", "update", "new", "make", "please",
+    "love", "best", "ever", "need", "want", "know"
+}
+
+stop_words.update(custom_stops)
+
+def preprocess_text(text):
+    if not isinstance(text, str):
+        return ""
+
+    text = text.lower()
+    text = re.sub(r"http\S+|www\.\S+", "", text)
+    text = re.sub(r"<.*?>", "", text)
+    text = re.sub(r"[^\x00-\x7F]+", " ", text)
+    text = re.sub(r"[^a-z\s]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+
+    tokens = word_tokenize(text)
+
+    tokens = [
+        lemmatizer.lemmatize(word)
+        for word in tokens
+        if word not in stop_words and len(word) > 2
+    ]
+
+    return " ".join(tokens)
+
+df["clean_review"] = df["review"].apply(preprocess_text)
+
+print("\nText preprocessing completed successfully.")
+
+# ==============================
+# 7. SENTIMENT ANALYSIS USING VADER
+# ==============================
+
+analyzer = SentimentIntensityAnalyzer()
+
+def get_sentiment_score(text):
+    return analyzer.polarity_scores(str(text))["compound"]
+
+def classify_sentiment(score):
+    if score >= 0.05:
+        return "Positive"
+    elif score <= -0.05:
+        return "Negative"
+    else:
+        return "Neutral"
+
+df["sentiment_score"] = df["review"].apply(get_sentiment_score)
+df["sentiment"] = df["sentiment_score"].apply(classify_sentiment)
+
+print("\nSentiment Analysis Completed")
+print("\nSentiment Distribution:")
+print(df["sentiment"].value_counts())
+
+# ==============================
+# 8. SENTIMENT VISUALIZATION
+# ==============================
+
+sentiment_counts = df["sentiment"].value_counts()
+
+plt.figure(figsize=(7, 5))
+plt.bar(sentiment_counts.index, sentiment_counts.values, edgecolor="white")
+plt.title("Overall Sentiment Distribution")
+plt.xlabel("Sentiment")
+plt.ylabel("Review Count")
+
+for x, y in zip(sentiment_counts.index, sentiment_counts.values):
+    plt.text(x, y + 3, str(y), ha="center", fontsize=10)
+
+plt.tight_layout()
+plt.savefig("sentiment_distribution.png", dpi=150, bbox_inches="tight")
+plt.show()
+
+cross = pd.crosstab(df["rating"], df["sentiment"], normalize="index") * 100
+
+cross.plot(kind="bar", figsize=(8, 5), edgecolor="white")
+plt.title("Sentiment per Star Rating")
+plt.xlabel("Star Rating")
+plt.ylabel("Percentage (%)")
+plt.xticks(rotation=0)
+plt.legend(title="Sentiment")
+plt.tight_layout()
+plt.savefig("sentiment_per_rating.png", dpi=150, bbox_inches="tight")
+plt.show()
+
+# Negative reviews based on sentiment or low rating
+df_neg = df[(df["sentiment"] == "Negative") | (df["rating"] <= 2)].copy()
+df_neg.reset_index(drop=True, inplace=True)
+
+print("\nTotal Reviews:", len(df))
+print(
+    f"Negative Reviews: {len(df_neg)} "
+    f"({len(df_neg) / len(df) * 100:.1f}%)"
+)
+
+print("\nTop 10 Most-Liked Negative Reviews:")
+print(df_neg.sort_values("likes", ascending=False)[["rating", "likes", "review"]].head(10))
+
+# ==============================
+# 9. WORD CLOUD FOR NEGATIVE REVIEWS
+# ==============================
+
+neg_text = " ".join(df_neg["clean_review"].dropna())
+
+if len(neg_text.strip()) > 0:
+    wordcloud = WordCloud(
+        width=900,
+        height=450,
+        background_color="white",
+        max_words=150,
+        collocations=False
+    ).generate(neg_text)
+
+    plt.figure(figsize=(14, 6))
+    plt.imshow(wordcloud, interpolation="bilinear")
+    plt.axis("off")
+    plt.title("Most Frequent Words in Negative Spotify Reviews", fontsize=16, fontweight="bold")
+    plt.tight_layout()
+    plt.savefig("negative_wordcloud.png", dpi=150, bbox_inches="tight")
+    plt.show()
+else:
+    print("\nNot enough negative review text to generate word cloud.")
+
+# ==============================
+# 10. ASPECT / COMPLAINT AREA ANALYSIS
+# ==============================
+
+aspect_keywords = {
+    "Ads Issue": ["ad", "ads", "advertisement", "commercial"],
+    "Payment Issue": ["premium", "payment", "pay", "paid", "subscription", "money"],
+    "Login Issue": ["login", "account", "password", "sign"],
+    "App Bug": ["bug", "crash", "glitch", "freeze", "error"],
+    "Playlist Issue": ["playlist", "queue", "shuffle"],
+    "Audio Issue": ["audio", "sound", "volume", "playback"],
+    "Recommendation Issue": ["recommendation", "suggest", "algorithm"],
+    "Offline Download Issue": ["offline", "download", "downloads"]
+}
+
+def detect_aspect(text):
+    found_aspects = []
+
+    for aspect, keywords in aspect_keywords.items():
+        for keyword in keywords:
+            if keyword in str(text).lower():
+                found_aspects.append(aspect)
+                break
+
+    if len(found_aspects) == 0:
+        return ["Other"]
+
+    return found_aspects
+
+df_neg["aspects"] = df_neg["review"].apply(detect_aspect)
+
+aspect_counter = Counter()
+
+for aspect_list in df_neg["aspects"]:
+    for aspect in aspect_list:
+        aspect_counter[aspect] += 1
+
+aspect_df = pd.DataFrame(
+    aspect_counter.items(),
+    columns=["Aspect", "Negative Reviews"]
+).sort_values(by="Negative Reviews", ascending=False)
+
+print("\nTop Complaint Areas:")
+print(aspect_df)
+
+plt.figure(figsize=(9, 5))
+plt.barh(
+    aspect_df["Aspect"][::-1],
+    aspect_df["Negative Reviews"][::-1],
+    edgecolor="white"
+)
+plt.title("Top Complaint Areas in Negative Reviews")
+plt.xlabel("Negative Review Count")
+plt.ylabel("Aspect")
+plt.tight_layout()
+plt.savefig("complaint_areas.png", dpi=150, bbox_inches="tight")
+plt.show()
+
+# ==============================
+# 11. SUMMARY DASHBOARD
+# ==============================
+
+top_complaint = aspect_df.iloc[0]["Aspect"] if not aspect_df.empty else "N/A"
+
+fig = plt.figure(figsize=(16, 10))
+fig.patch.set_facecolor("#f8f9fa")
+
+kpi_data = [
+    ("Total Reviews", f"{len(df):,}"),
+    ("Avg. Rating", f"{df['rating'].mean():.2f} ★"),
+    ("Negative Reviews", f"{len(df_neg):,} ({len(df_neg) / len(df) * 100:.0f}%)"),
+    ("Top Complaint", top_complaint)
+]
+
+for i, (label, value) in enumerate(kpi_data):
+    ax = fig.add_axes([0.03 + i * 0.24, 0.75, 0.21, 0.18])
+    ax.text(
+        0.5,
+        0.65,
+        value,
+        ha="center",
+        va="center",
+        fontsize=15,
+        fontweight="bold",
+        transform=ax.transAxes
+    )
+    ax.text(
+        0.5,
+        0.25,
+        label,
+        ha="center",
+        va="center",
+        fontsize=10,
+        transform=ax.transAxes
+    )
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_frame_on(True)
+
+# Complaint bar chart
+ax2 = fig.add_axes([0.07, 0.08, 0.42, 0.55])
+
+top5 = aspect_df.head(5)
+
+ax2.barh(
+    top5["Aspect"][::-1],
+    top5["Negative Reviews"][::-1],
+    edgecolor="white"
+)
+
+ax2.set_title("Top 5 Complaint Areas", fontsize=13, fontweight="bold")
+ax2.set_xlabel("Negative Review Count")
+
+# Sentiment pie chart
+ax3 = fig.add_axes([0.57, 0.08, 0.35, 0.55])
+
+sc = df["sentiment"].value_counts()
+
+ax3.pie(
+    sc.values,
+    labels=sc.index,
+    autopct="%1.1f%%",
+    startangle=90,
+    wedgeprops={"edgecolor": "white", "linewidth": 1.5}
+)
+
+ax3.set_title("Overall Sentiment Split", fontsize=13, fontweight="bold")
+
+fig.suptitle("Spotify Review Analytics Dashboard", fontsize=18, fontweight="bold", y=0.98)
+
+plt.savefig("summary_dashboard.png", dpi=150, bbox_inches="tight")
+plt.show()
+
+# ==============================
+# 12. SAVE FINAL OUTPUT FILES
+# ==============================
+
+df.to_csv("spotify_reviews_text_mining_output.csv", index=False)
+df_neg.to_csv("negative_spotify_reviews.csv", index=False)
+aspect_df.to_csv("complaint_area_summary.csv", index=False)
+
+print("\nTEXT REVIEW MINING COMPLETED SUCCESSFULLY")
+print("Files saved:")
+print("1. spotify_reviews_raw.csv")
+print("2. spotify_reviews_text_mining_output.csv")
+print("3. negative_spotify_reviews.csv")
+print("4. complaint_area_summary.csv")
+print("5. rating_distribution_bar.png")
+print("6. rating_distribution_pie.png")
+print("7. sentiment_distribution.png")
+print("8. sentiment_per_rating.png")
+print("9. negative_wordcloud.png")
+print("10. complaint_areas.png")
+print("11. summary_dashboard.png")
